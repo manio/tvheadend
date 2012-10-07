@@ -538,6 +538,7 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
   capmt_t *capmt = ct->ct_capmt;
   int adapter_num = t->s_dvb_mux_instance->tdmi_adapter->tda_adapter_num;
   int total_caids = 0, current_caid = 0;
+  static uint8_t lastsent[4094] = {0};
 
   caid_t *c;
 
@@ -716,7 +717,10 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
           buf[9] = pmtversion;
           pmtversion = (pmtversion + 1) & 0x1F;
 
-          capmt_send_msg(capmt, buf, pos);
+          if (memcmp(&buf[13], &lastsent[13], pos-13)!=0) {
+            capmt_send_msg(capmt, buf, pos);
+            memcpy(&lastsent[0], &buf[0], pos);
+          }
           break;
         }
       default:
