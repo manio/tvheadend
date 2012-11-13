@@ -539,16 +539,18 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
   capmt_t *capmt = ct->ct_capmt;
   int adapter_num = t->s_dvb_mux_instance->tdmi_adapter->tda_adapter_num;
   int total_caids = 0, current_caid = 0;
-  static uint8_t lastsent[4094] = {0};
+  static uint8_t lastsent[104094] = {0};
 
   caid_t *c;
 
   LIST_FOREACH(c, &st->es_caids, link) {
     total_caids++;
   }
+  tvhlog(LOG_DEBUG, "capmt", "total_caids=%d", total_caids);
 
   LIST_FOREACH(c, &st->es_caids, link) {
     current_caid++;
+    tvhlog(LOG_DEBUG, "capmt", "current_caid=%d", current_caid);
 
     if(c == NULL)
       return;
@@ -605,8 +607,9 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
 
           /* buffer for capmt */
           int pos = 0;
-          uint8_t buf[4094];
+          uint8_t buf[104094];
 
+          tvhlog(LOG_DEBUG, "capmt", "BUF START");
           capmt_header_t head = {
             .capmt_indicator        = { 0x9F, 0x80, 0x32, 0x82, 0x00, 0x00 },
             .capmt_list_management  = CAPMT_LIST_ONLY,
@@ -717,8 +720,10 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
 
           buf[9] = pmtversion;
           pmtversion = (pmtversion + 1) & 0x1F;
+          tvhlog(LOG_DEBUG, "capmt", "capmt_send, BEFORE, pos=%d", pos);
 
           if (memcmp(&buf[13], &lastsent[13], pos-13)!=0) {
+            tvhlog(LOG_DEBUG, "capmt", "capmt_send_msg, size=%d", pos);
             capmt_send_msg(capmt, buf, pos);
             memcpy(&lastsent[0], &buf[0], pos);
           }
