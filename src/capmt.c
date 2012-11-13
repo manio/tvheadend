@@ -208,7 +208,11 @@ typedef struct capmt {
 static int
 capmt_send_msg(capmt_t *capmt, const uint8_t *buf, size_t len)
 {
-  return write(capmt->capmt_sock, buf, len);
+  tvhlog(LOG_DEBUG, "capmt", "capmt_send_msg WRITING size=%d", (int)len);
+  int x = write(capmt->capmt_sock, buf, len);
+  //give oscam a time to eat ;)
+  usleep(30 * 1000);
+  return x;
 }
 
 static void 
