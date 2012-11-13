@@ -544,6 +544,8 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
   int adapter_num = t->s_dvb_mux_instance->tdmi_adapter->tda_adapter_num;
   int total_caids = 0, current_caid = 0;
   static uint8_t lastsent[104094] = {0};
+  int startpos = 0;
+  int endpos = 0;
 
   caid_t *c;
 
@@ -665,7 +667,7 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
               ecmpid >> 8, ecmpid & 0xFF }};
           memcpy(&buf[pos], &ecd, ecd.cad_length + 2);
           pos += ecd.cad_length + 2;
-
+          startpos = pos;
           LIST_FOREACH(cce2, &ct->ct_caid_ecm, cce_link) {
             capmt_descriptor_t cad = { 
               .cad_type = 0x09, 
@@ -702,6 +704,7 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
               cce2->cce_caid, cce2->cce_caid,
               cce2->cce_providerid, cce2->cce_providerid);
           }
+          endpos = pos;
 
           uint8_t end[] = { 
             0x01, (ct->ct_seq >> 8) & 0xFF, ct->ct_seq & 0xFF, 0x00, 0x06 };
@@ -726,10 +729,10 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
           pmtversion = (pmtversion + 1) & 0x1F;
           tvhlog(LOG_DEBUG, "capmt", "capmt_send, BEFORE, pos=%d", pos);
 
-          if (memcmp(&buf[13], &lastsent[13], pos-13)!=0) {
+          if (memcmp(&lastsent[0], &buf[startpos], endpos-startpos)!=0) {
             tvhlog(LOG_DEBUG, "capmt", "capmt_send_msg, size=%d", pos);
             capmt_send_msg(capmt, buf, pos);
-            memcpy(&lastsent[0], &buf[0], pos);
+            memcpy(&lastsent[0], &buf[startpos], endpos-startpos);
           }
           break;
         }
