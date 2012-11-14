@@ -640,8 +640,9 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
   capmt_t *capmt = ct->ct_capmt;
   int adapter_num = t->s_dvb_mux_instance->tdmi_adapter->tda_adapter_num;
   int total_caids = 0, current_caid = 0;
-  int cad_start = 0, cad_len = 0;
-  static uint8_t last_cad[MAX_CA][4094];
+  //int cad_start = 0, cad_len = 0;
+  //static uint8_t last_cad[MAX_CA][4094];
+  int i;
 
   caid_t *c;
 
@@ -755,7 +756,7 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
           memcpy(&buf[pos], &ecd, ecd.cad_length + 2);
           pos += ecd.cad_length + 2;
 
-          cad_start = pos;
+          //cad_start = pos;
           LIST_FOREACH(cce2, &ct->ct_caid_ecm, cce_link) {
             capmt_descriptor_t cad = { 
               .cad_type = 0x09, 
@@ -792,7 +793,7 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
               cce2->cce_caid, cce2->cce_caid,
               cce2->cce_providerid, cce2->cce_providerid);
           }
-          cad_len = pos - cad_start;
+          //cad_len = pos - cad_start;
 
           uint8_t end[] = { 
             0x01, (ct->ct_seq >> 8) & 0xFF, ct->ct_seq & 0xFF, 0x00, 0x06 };
@@ -816,10 +817,15 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
           buf[9] = pmtversion;
           pmtversion = (pmtversion + 1) & 0x1F;
 
-          if (memcmp(&last_cad[adapter_num][0], &buf[cad_start], cad_len) != 0) {
-            capmt_send_msg(capmt, sid, buf, pos);
-            memcpy(&last_cad[adapter_num][0], &buf[cad_start], cad_len);
+          int found = 0;
+          for (i = 0; i < MAX_SOCKETS; i++) {
+            if (capmt->sids[i] == sid) {
+              found = 1;
+              break;
+            }
           }
+          if (found == 0)
+            capmt_send_msg(capmt, sid, buf, pos);
           break;
         }
       default:
