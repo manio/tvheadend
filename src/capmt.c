@@ -77,6 +77,7 @@
 #define INFO_SIZE (2+KEY_SIZE+KEY_SIZE)
 #define EVEN_OFF  (2)
 #define ODD_OFF   (2+KEY_SIZE)
+#define MAX_SOCKETS          16   // max sockets (simultaneus channels) per demux
 static unsigned char ca_info[MAX_CA][MAX_INDEX][INFO_SIZE];
 
 /**
@@ -189,7 +190,8 @@ typedef struct capmt {
   int   capmt_oscam;
 
   /* capmt sockets */
-  int   capmt_sock;
+  int   sids[MAX_SOCKETS];
+  int   capmt_sock[MAX_SOCKETS];
   int   capmt_sock_ca0[MAX_CA];
 
   /* thread flags */
@@ -206,9 +208,9 @@ typedef struct capmt {
  *
  */
 static int
-capmt_send_msg(capmt_t *capmt, const uint8_t *buf, size_t len)
+capmt_send_msg(capmt_t *capmt, int sid, const uint8_t *buf, size_t len)
 {
-  return write(capmt->capmt_sock, buf, len);
+  return write(capmt->capmt_sock[0], buf, len);
 }
 
 static void 
@@ -242,7 +244,7 @@ capmt_send_stop(capmt_service_t *t)
   buf[10] = ((pos - 5 - 12) & 0xF00) >> 8;
   buf[11] = ((pos - 5 - 12) & 0xFF);
   
-  capmt_send_msg(t->ct_capmt, buf, pos);
+  capmt_send_msg(t->ct_capmt, t->ct_service->s_dvb_service_id, buf, pos);
 }
 
 /**
@@ -457,9 +459,12 @@ capmt_thread(void *aux)
   th_dvb_adapter_t *tda;
 
   while (capmt->capmt_running) {
-    capmt->capmt_sock = -1;
     for (i = 0; i < MAX_CA; i++)
       capmt->capmt_sock_ca0[i] = -1;
+    for (i = 0; i < MAX_SOCKETS; i++) {
+      capmt->sids[i] = 0;
+      capmt->capmt_sock[i] = 0;
+    }
     capmt->capmt_connected = 0;
     
     pthread_mutex_lock(&global_lock);
@@ -470,14 +475,14 @@ capmt_thread(void *aux)
     pthread_mutex_unlock(&global_lock);
 
     /* open connection to camd.socket */
-    capmt->capmt_sock = tvh_socket(AF_LOCAL, SOCK_STREAM, 0);
+    capmt->capmt_sock[0] = tvh_socket(AF_LOCAL, SOCK_STREAM, 0);
 
     struct sockaddr_un serv_addr_un;
     memset(&serv_addr_un, 0, sizeof(serv_addr_un));
     serv_addr_un.sun_family = AF_LOCAL;
     snprintf(serv_addr_un.sun_path, sizeof(serv_addr_un.sun_path), "%s", capmt->capmt_sockfile);
 
-    if (connect(capmt->capmt_sock, (const struct sockaddr*)&serv_addr_un, sizeof(serv_addr_un)) == 0) {
+    if (connect(capmt->capmt_sock[0], (const struct sockaddr*)&serv_addr_un, sizeof(serv_addr_un)) == 0) {
       capmt->capmt_connected = 1;
 
       /* open connection to emulated ca0 device */
@@ -503,8 +508,9 @@ capmt_thread(void *aux)
     capmt->capmt_connected = 0;
 
     /* close opened sockets */
-    if (capmt->capmt_sock > 0)
-      close(capmt->capmt_sock);
+    for (i = 0; i < MAX_SOCKETS; i++)
+      if (capmt->capmt_sock[i] > 0)
+        close(capmt->capmt_sock[i]);
     for (i = 0; i < MAX_CA; i++)
       if (capmt->capmt_sock_ca0[i] > 0)
         close(capmt->capmt_sock_ca0[i]);
@@ -588,12 +594,6 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
 
           if ((cce->cce_ecmsize == len) && !memcmp(cce->cce_ecm, data, len))
             break; /* key already sent */
-
-          if(capmt->capmt_sock == -1) {
-            /* New key, but we are not connected (anymore), can not descramble */
-            ct->ct_keystate = CT_UNKNOWN;
-            break;
-          }
 
           uint16_t sid = t->s_dvb_service_id;
           uint16_t ecmpid = st->es_pid;
@@ -723,7 +723,7 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
           pmtversion = (pmtversion + 1) & 0x1F;
 
           if (memcmp(&last_cad[adapter_num][0], &buf[cad_start], cad_len) != 0) {
-            capmt_send_msg(capmt, buf, pos);
+            capmt_send_msg(capmt, sid, buf, pos);
             memcpy(&last_cad[adapter_num][0], &buf[cad_start], cad_len);
           }
           break;
