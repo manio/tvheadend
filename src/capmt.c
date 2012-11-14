@@ -210,12 +210,106 @@ typedef struct capmt {
 static int
 capmt_send_msg(capmt_t *capmt, int sid, const uint8_t *buf, size_t len)
 {
-  return write(capmt->capmt_sock[0], buf, len);
+  int i;
+
+//dumping current SID table
+  for (i = 0; i < MAX_SOCKETS; i++)
+    tvhlog(LOG_DEBUG, "capmt", "%s: SOCKETS TABLE DUMP [%d]: sid=%d socket=%d", __FUNCTION__, i, capmt->sids[i], capmt->capmt_sock[i]);
+  if (sid == 0)
+  {
+    tvhlog(LOG_DEBUG, "capmt", "%s: got empty SID - returning from function", __FUNCTION__);
+    return -1;
+  }
+
+//searching for the SID and socket
+    int found = 0;
+    for (i = 0; i < MAX_SOCKETS; i++)
+    {
+      if (capmt->sids[i] == sid)
+      {
+        found = 1;
+        break;
+      }
+    }
+
+    if (found)
+      tvhlog(LOG_DEBUG, "capmt", "%s: found sid, reusing socket, i=%d", __FUNCTION__, i);
+    else                        //not found - adding to first free in table
+    {
+      for (i = 0; i < MAX_SOCKETS; i++)
+      {
+        if (capmt->sids[i] == 0)
+        {
+          capmt->sids[i] = sid;
+          break;
+        }
+      }
+    }
+    if (i == MAX_SOCKETS)
+    {
+      tvhlog(LOG_DEBUG, "capmt", "%s: no free space for new SID!!!", __FUNCTION__);
+      return -1;
+    }
+    else
+    {
+      capmt->sids[i] = sid;
+      tvhlog(LOG_DEBUG, "capmt", "%s: added: i=%d", __FUNCTION__, i);
+    }
+
+//opening socket and sending
+  if (capmt->capmt_sock[i] == 0)
+  {
+    capmt->capmt_sock[i] = tvh_socket(AF_LOCAL, SOCK_STREAM, 0);
+    struct sockaddr_un serv_addr_un;
+    memset(&serv_addr_un, 0, sizeof(serv_addr_un));
+    serv_addr_un.sun_family = AF_LOCAL;
+    snprintf(serv_addr_un.sun_path, sizeof(serv_addr_un.sun_path), "%s", capmt->capmt_sockfile);
+    if (connect(capmt->capmt_sock[i], (const struct sockaddr*)&serv_addr_un, sizeof(serv_addr_un)) != 0) {
+      tvhlog(LOG_ERR, "capmt", "Cannot connect to /tmp/camd.socket, Do you have OSCam running?");
+      capmt->capmt_sock[i] = 0;
+    }
+    else
+      tvhlog(LOG_DEBUG, "capmt", "created socket with socket_fd=%d", capmt->capmt_sock[i]);
+  }
+  if (capmt->capmt_sock[i] > 0)
+  {
+    int sent = write(capmt->capmt_sock[i], buf, len);
+    tvhlog(LOG_DEBUG, "capmt", "socket_fd=%d len=%d sent=%d", capmt->capmt_sock[i], (int)len, sent);
+    if (sent != len)
+    {
+      tvhlog(LOG_ERR, "capmt", "%s: len != sent", __FUNCTION__);
+      close(capmt->capmt_sock[i]);
+      capmt->capmt_sock[i] = 0;
+    }
+  }
+
+  return 0;
 }
 
 static void 
 capmt_send_stop(capmt_service_t *t)
 {
+//the new way
+    int i;
+    for (i = 0; i < MAX_SOCKETS; i++)
+    {
+      if (t->ct_capmt->sids[i] == t->ct_service->s_dvb_service_id)
+        break;
+    }
+    if (i == MAX_SOCKETS)
+    {
+      tvhlog(LOG_DEBUG, "capmt", "%s: socket to close not found", __FUNCTION__);
+      return;
+    }
+
+    //closing socket (oscam handles this as event and stop decrypting)
+    tvhlog(LOG_DEBUG, "capmt", "%s: closing socket i=%d, socket_fd=%d", __FUNCTION__, i, t->ct_capmt->capmt_sock[i]);
+    t->ct_capmt->sids[i] = 0;
+    if (t->ct_capmt->capmt_sock[i] > 0)
+      close(t->ct_capmt->capmt_sock[i]);
+    t->ct_capmt->capmt_sock[i] = 0;
+    return;
+
   /* buffer for capmt */
   int pos = 0;
   uint8_t buf[4094];
