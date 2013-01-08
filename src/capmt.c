@@ -720,6 +720,8 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
           uint16_t sid = t->s_dvb_service_id;
           uint16_t ecmpid = st->es_pid;
           uint16_t transponder = 0;
+          uint16_t tsid = t->s_dvb_mux_instance->tdmi_transport_stream_id;
+          uint16_t onid = t->s_dvb_mux_instance->tdmi_network_id;
 
           /* don't do too much requests */
           if (current_caid == total_caids && caid != ct->ct_caid_last)
@@ -757,7 +759,9 @@ capmt_table_input(struct th_descrambler *td, struct service *t,
           capmt_descriptor_t prd = { 
             .cad_type = CAPMT_DESC_PRIVATE, 
             .cad_length = 0x08,
-            .cad_data = { 0x00, 0x00, 0x00, 0x00, 
+            .cad_data = {
+              tsid >> 8, tsid & 0xFF,
+              onid >> 8, onid & 0xFF,
               sid >> 8, sid & 0xFF,
               transponder >> 8, transponder & 0xFF
             }};
